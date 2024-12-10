@@ -10,6 +10,8 @@ import numpy as np
 from time import time
 import atexit
 import logging
+import threading
+
 
 # Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s]: %(message)s")
@@ -121,40 +123,48 @@ def filter_landmarks(landmarks):
 
 def update_frame(frame_label, pose, frame_callback=None):
     """Capture and process a frame."""
-    global cap, last_frame_time
-    current_time = time()
-    if current_time - last_frame_time < frame_interval:
-        frame_label.after(10, update_frame, frame_label, pose, frame_callback)
-        return
+    global cap  # Deklarasi cap sebagai global
 
-    last_frame_time = current_time
-    ret, frame = cap.read()
-    if not ret:
-        logger.error("Failed to read frame from camera.")
-        return
+    def run_capture():
+        global last_frame_time  # Mengakses variabel global last_frame_time
+        while True:
+            current_time = time()
+            if current_time - last_frame_time < frame_interval:
+                continue
 
-    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = pose.process(frame_rgb)
+            last_frame_time = current_time
+            ret, frame = cap.read()
+            if not ret:
+                logger.error("Failed to read frame from camera.")
+                break
 
-    if results.pose_landmarks:
-        mp_drawing.draw_landmarks(
-            frame,
-            results.pose_landmarks,
-            mp_pose.POSE_CONNECTIONS,
-            mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2, circle_radius=2),
-            mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=2, circle_radius=2),
-        )
-        if frame_callback:
-            frame_callback(results.pose_landmarks.landmark)
+            # Resize frame to desired size
+            frame = cv2.resize(frame, (320, 240))  # Ukuran frame lebih kecil
 
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    frame_pil = Image.fromarray(frame)
-    frame_tk = ImageTk.PhotoImage(frame_pil)
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = pose.process(frame_rgb)
 
-    frame_label.imgtk = frame_tk
-    frame_label.configure(image=frame_tk)
+            if results.pose_landmarks:
+                mp_drawing.draw_landmarks(
+                    frame,
+                    results.pose_landmarks,
+                    mp_pose.POSE_CONNECTIONS,
+                    mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2, circle_radius=2),
+                    mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=2, circle_radius=2),
+                )
+                if frame_callback:
+                    frame_callback(results.pose_landmarks.landmark)
 
-    frame_label.after(10, update_frame, frame_label, pose, frame_callback)
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame_pil = Image.fromarray(frame)
+            frame_tk = ImageTk.PhotoImage(frame_pil)
+
+            frame_label.imgtk = frame_tk
+            frame_label.configure(image=frame_tk)
+
+    thread = threading.Thread(target=run_capture, daemon=True)
+    thread.start()
+
 
 class ScrollableFrame(Frame):
     """A scrollable frame using Canvas."""
