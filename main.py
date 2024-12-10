@@ -13,15 +13,12 @@ import logging
 import threading
 
 
-# Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s]: %(message)s")
 logger = logging.getLogger()
 
-# MediaPipe initialization
 mp_pose = mp.solutions.pose
 mp_drawing = mp.solutions.drawing_utils
 
-# Global variables
 recording = False
 recorded_data = []
 last_frame_time = 0
@@ -123,10 +120,10 @@ def filter_landmarks(landmarks):
 
 def update_frame(frame_label, pose, frame_callback=None):
     """Capture and process a frame."""
-    global cap  # Deklarasi cap sebagai global
+    global cap
 
     def run_capture():
-        global last_frame_time  # Mengakses variabel global last_frame_time
+        global last_frame_time
         while True:
             current_time = time()
             if current_time - last_frame_time < frame_interval:
@@ -138,8 +135,7 @@ def update_frame(frame_label, pose, frame_callback=None):
                 logger.error("Failed to read frame from camera.")
                 break
 
-            # Resize frame to desired size
-            frame = cv2.resize(frame, (320, 240))  # Ukuran frame lebih kecil
+            frame = cv2.resize(frame, (320, 240))
 
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = pose.process(frame_rgb)
@@ -196,6 +192,10 @@ class AddDataPage(Page):
         self.motion_score_var = StringVar()
         self.recording_label = None
         self.is_recording = False
+        
+        self.recording_time = 0
+        self.timer_thread = None
+        self.timer_running = False
 
         tk.Label(self, text="Tambah Data Gerakan Tari", font=("Helvetica", 16)).pack(pady=10)
         video_label = tk.Label(self)
@@ -209,6 +209,9 @@ class AddDataPage(Page):
 
         self.recording_label = tk.Label(form_frame.frame, text="", font=("Helvetica", 12), fg="red")
         self.recording_label.pack(pady=5)
+        
+        self.timer_label = tk.Label(form_frame.frame, text="Waktu: 00:00", font=("Helvetica", 12), fg="blue")
+        self.timer_label.pack(pady=5)
 
         tk.Label(form_frame.frame, text="Nama Tari:").pack(pady=5)
         tk.Entry(form_frame.frame, textvariable=self.dance_name_var).pack(pady=5)
@@ -230,9 +233,24 @@ class AddDataPage(Page):
         recording = True
         recorded_data = []
         self.is_recording = True
+        
+        self.recording_time = 0
         self.recording_label.config(text="Sedang merekam...")
+        self.timer_label.config(text="Waktu: 00:00")
         logger.info("Started recording motion.")
 
+        self.update_timer()
+
+    def update_timer(self):
+        """Update the timer while recording using `after`."""
+        if self.is_recording:
+            minutes, seconds = divmod(self.recording_time, 60)
+            timer_text = f"Waktu: {minutes:02}:{seconds:02}"
+            self.timer_label.config(text=timer_text)
+
+            self.recording_time += 1
+            self.after(1000, self.update_timer)
+            
     def stop_recording(self):
         global recording
         if not self.is_recording:
@@ -241,7 +259,9 @@ class AddDataPage(Page):
 
         recording = False
         self.is_recording = False
+        
         self.recording_label.config(text="")
+        self.timer_label.config(text="Waktu: 00:00")
         logger.info("Stopped recording motion.")
         messagebox.showinfo("Rekam Selesai", "Perekaman gerakan selesai. Silakan masukkan nama tari dan nilai.")
 
@@ -252,6 +272,10 @@ class AddDataPage(Page):
             recorded_data.append(filtered_landmarks)
 
     def save_motion(self):
+        if self.is_recording:
+            messagebox.showwarning("Peringatan", "Harap hentikan perekaman sebelum menyimpan data.")
+            return
+
         dance_name = self.dance_name_var.get().strip()
         motion_score = self.motion_score_var.get().strip()
 
@@ -331,7 +355,6 @@ class EvaluatePage(Page):
             filtered_landmarks = filter_landmarks(landmarks)
             recorded_data.append(filtered_landmarks)
 
-            # Calculate score dynamically
             motions = get_dance_motions(self.dance_id)
             for motion in motions:
                 reference_landmarks = json.loads(motion[0])
