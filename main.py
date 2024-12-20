@@ -11,7 +11,11 @@ from time import time
 import atexit
 import logging
 import threading
-
+import zlib
+import ttkbootstrap as tb
+from ttkbootstrap.constants import *
+import tkinter as tk
+from tkinter import ttk, messagebox
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s]: %(message)s")
 logger = logging.getLogger()
@@ -26,6 +30,7 @@ frame_interval = 0.03  # 10ms interval (~100 FPS)
 
 # Database setup
 DB_FILE = "dance.db"
+
 
 def initialize_database():
     """Initialize the SQLite database."""
@@ -49,6 +54,7 @@ def initialize_database():
         conn.commit()
     logger.info("Database initialized.")
 
+
 def add_dance(name):
     """Add a dance type to the database."""
     with sqlite3.connect(DB_FILE) as conn:
@@ -57,6 +63,7 @@ def add_dance(name):
         conn.commit()
     logger.debug(f"Dance '{name}' added to database.")
 
+
 def get_all_dances():
     """Get all dance types from the database."""
     with sqlite3.connect(DB_FILE) as conn:
@@ -64,23 +71,27 @@ def get_all_dances():
         cursor.execute("SELECT id, name FROM dances")
         return cursor.fetchall()
 
+
 def add_motion(dance_id, landmarks, score):
-    """Add motion data to the database."""
+    """Add motion data to the database with zlib compression."""
+    compressed_landmarks = zlib.compress(json.dumps(landmarks).encode('utf-8'))
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO motions (dance_id, landmarks, score)
             VALUES (?, ?, ?)
-        """, (dance_id, json.dumps(landmarks), score))
+        """, (dance_id, compressed_landmarks, score))
         conn.commit()
     logger.debug(f"Motion data saved for dance ID {dance_id} with score {score}.")
+
 
 def get_dance_motions(dance_id):
     """Get all motions for a specific dance."""
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT landmarks, score FROM motions WHERE dance_id = ?", (dance_id,))
-        return cursor.fetchall()
+        motions = cursor.fetchall()
+        return [(zlib.decompress(motion[0]).decode('utf-8'), motion[1]) for motion in motions]
 
 def calculate_score(reference, current):
     if len(reference) != len(current):
@@ -96,6 +107,7 @@ def calculate_score(reference, current):
     score = max(0, 100 - int(average_difference * 50))
     logger.debug(f"Thresholded Differences: {differences}, Average: {average_difference}, Score: {score}")
     return score
+
 
 def evaluate_motion(dance_id, recorded_data):
     """Evaluate the recorded motion against a dance type."""
@@ -113,10 +125,12 @@ def evaluate_motion(dance_id, recorded_data):
     logger.info(f"Best score: {best_score}")
     return f"Skor terbaik: {best_score}"
 
+
 def filter_landmarks(landmarks):
     """Take all landmarks for complete body tracking."""
     important_indices = [0, 11, 12, 13, 14, 23, 24]
     return [(lm.x, lm.y, lm.z) for idx, lm in enumerate(landmarks) if idx in important_indices]
+
 
 def update_frame(frame_label, pose, frame_callback=None):
     """Capture and process a frame."""
@@ -164,6 +178,7 @@ def update_frame(frame_label, pose, frame_callback=None):
 
 class ScrollableFrame(Frame):
     """A scrollable frame using Canvas."""
+
     def __init__(self, parent, *args, **kwargs):
         Frame.__init__(self, parent, *args, **kwargs)
         canvas = Canvas(self, borderwidth=0)
@@ -179,10 +194,12 @@ class ScrollableFrame(Frame):
         self.canvas = canvas
         self.frame = frame
 
+
 class Page(Frame):
     def __init__(self, parent, controller):
         super().__init__(parent)
         self.controller = controller
+
 
 class AddDataPage(Page):
     def __init__(self, parent, controller):
@@ -192,34 +209,34 @@ class AddDataPage(Page):
         self.motion_score_var = StringVar()
         self.recording_label = None
         self.is_recording = False
-        
+
         self.recording_time = 0
         self.timer_thread = None
         self.timer_running = False
 
-        tk.Label(self, text="Tambah Data Gerakan Tari", font=("Helvetica", 16)).pack(pady=10)
-        video_label = tk.Label(self)
+        tb.Label(self, text="Tambah Data Gerakan Tari", font=("Helvetica", 16)).pack(pady=10)
+        video_label = tb.Label(self)
         video_label.pack()
 
         form_frame = ScrollableFrame(self)
         form_frame.pack(fill="both", expand=True)
 
-        tk.Button(form_frame.frame, text="Mulai Rekam", command=self.start_recording).pack(pady=5)
-        tk.Button(form_frame.frame, text="Berhenti Rekam", command=self.stop_recording).pack(pady=5)
+        tb.Button(form_frame.frame, text="Mulai Rekam", command=self.start_recording).pack(pady=5)
+        tb.Button(form_frame.frame, text="Berhenti Rekam", command=self.stop_recording).pack(pady=5)
 
-        self.recording_label = tk.Label(form_frame.frame, text="", font=("Helvetica", 12), fg="red")
+        self.recording_label = tb.Label(form_frame.frame, text="", font=("Helvetica", 12), bootstyle="danger")
         self.recording_label.pack(pady=5)
-        
-        self.timer_label = tk.Label(form_frame.frame, text="Waktu: 00:00", font=("Helvetica", 12), fg="blue")
+
+        self.timer_label = tb.Label(form_frame.frame, text="Waktu: 00:00", font=("Helvetica", 12), bootstyle="info")
         self.timer_label.pack(pady=5)
 
-        tk.Label(form_frame.frame, text="Nama Tari:").pack(pady=5)
-        tk.Entry(form_frame.frame, textvariable=self.dance_name_var).pack(pady=5)
-        tk.Label(form_frame.frame, text="Nilai Gerakan:").pack(pady=5)
-        tk.Entry(form_frame.frame, textvariable=self.motion_score_var).pack(pady=5)
+        tb.Label(form_frame.frame, text="Nama Tari:").pack(pady=5)
+        tb.Entry(form_frame.frame, textvariable=self.dance_name_var).pack(pady=5)
+        tb.Label(form_frame.frame, text="Nilai Gerakan:").pack(pady=5)
+        tb.Entry(form_frame.frame, textvariable=self.motion_score_var).pack(pady=5)
 
-        tk.Button(form_frame.frame, text="Simpan Gerakan", command=self.save_motion).pack(pady=5)
-        tk.Button(form_frame.frame, text="Kembali", command=lambda: controller.show_frame("HomePage")).pack(pady=5)
+        tb.Button(form_frame.frame, text="Simpan Gerakan", command=self.save_motion).pack(pady=5)
+        tb.Button(form_frame.frame, text="Kembali", command=lambda: controller.show_frame("HomePage")).pack(pady=5)
 
         self.pose = mp_pose.Pose()
         update_frame(video_label, self.pose, self.capture_landmarks)
@@ -233,7 +250,7 @@ class AddDataPage(Page):
         recording = True
         recorded_data = []
         self.is_recording = True
-        
+
         self.recording_time = 0
         self.recording_label.config(text="Sedang merekam...")
         self.timer_label.config(text="Waktu: 00:00")
@@ -250,7 +267,7 @@ class AddDataPage(Page):
 
             self.recording_time += 1
             self.after(1000, self.update_timer)
-            
+
     def stop_recording(self):
         global recording
         if not self.is_recording:
@@ -259,7 +276,7 @@ class AddDataPage(Page):
 
         recording = False
         self.is_recording = False
-        
+
         self.recording_label.config(text="")
         self.timer_label.config(text="Waktu: 00:00")
         logger.info("Stopped recording motion.")
@@ -267,9 +284,10 @@ class AddDataPage(Page):
 
     def capture_landmarks(self, landmarks):
         if self.is_recording:
-            filtered_landmarks = filter_landmarks(landmarks)
-            logger.debug(f"Captured landmarks: {filtered_landmarks}")
-            recorded_data.append(filtered_landmarks)
+            if len(recorded_data) % (3 * 30) == 0:  # 3 detik
+                filtered_landmarks = filter_landmarks(landmarks)
+                logger.debug(f"Captured landmarks: {filtered_landmarks}")
+                recorded_data.append(filtered_landmarks)
 
     def save_motion(self):
         if self.is_recording:
@@ -295,7 +313,8 @@ class AddDataPage(Page):
         evaluate_page = self.controller.frames["EvaluatePage"]
         evaluate_page.update_dropdown()
         messagebox.showinfo("Sukses", f"Gerakan disimpan untuk tari '{dance_name}'.")
-        
+
+
 class EvaluatePage(Page):
     def __init__(self, parent, controller):
         super().__init__(parent, controller)
@@ -304,25 +323,25 @@ class EvaluatePage(Page):
         self.is_evaluating = False
         self.best_score = 0
 
-        tk.Label(self, text="Penilaian Gerakan Tari", font=("Helvetica", 16)).pack(pady=10)
-        video_label = tk.Label(self)
+        tb.Label(self, text="Penilaian Gerakan Tari", font=("Helvetica", 16)).pack(pady=10)
+        video_label = tb.Label(self)
         video_label.pack()
 
         dropdown_frame = ScrollableFrame(self)
         dropdown_frame.pack(fill="both", expand=True)
 
-        tk.Label(dropdown_frame.frame, text="Pilih Tari:").pack(pady=5)
+        tb.Label(dropdown_frame.frame, text="Pilih Tari:").pack(pady=5)
         self.dropdown = ttk.Combobox(dropdown_frame.frame, textvariable=self.selected_dance_var, state="readonly")
         self.dropdown.pack(pady=5)
         self.update_dropdown()
 
-        tk.Button(dropdown_frame.frame, text="Mulai Evaluasi", command=self.start_evaluation).pack(pady=5)
-        tk.Button(dropdown_frame.frame, text="Berhenti Evaluasi", command=self.stop_evaluation).pack(pady=5)
+        tb.Button(dropdown_frame.frame, text="Mulai Evaluasi", command=self.start_evaluation).pack(pady=5)
+        tb.Button(dropdown_frame.frame, text="Berhenti Evaluasi", command=self.stop_evaluation).pack(pady=5)
 
-        self.evaluating_label = tk.Label(dropdown_frame.frame, text="", font=("Helvetica", 12), fg="red")
+        self.evaluating_label = tb.Label(dropdown_frame.frame, text="", font=("Helvetica", 12), bootstyle="danger")
         self.evaluating_label.pack(pady=5)
 
-        tk.Button(dropdown_frame.frame, text="Kembali", command=lambda: controller.show_frame("HomePage")).pack(pady=5)
+        tb.Button(dropdown_frame.frame, text="Kembali", command=lambda: controller.show_frame("HomePage")).pack(pady=5)
 
         self.pose = mp_pose.Pose()
         update_frame(video_label, self.pose, self.evaluate_frame_callback)
@@ -371,23 +390,24 @@ class HomePage(Page):
     def __init__(self, parent, controller):
         super().__init__(parent, controller)
 
-        tk.Label(self, text="Sistem Penilaian Gerakan Tari", font=("Helvetica", 20)).pack(pady=20)
-        tk.Button(self, text="Tambah Data Tari", command=lambda: controller.show_frame("AddDataPage")).pack(pady=10)
-        tk.Button(self, text="Penilaian Tari", command=lambda: controller.show_frame("EvaluatePage")).pack(pady=10)
-        tk.Button(self, text="Keluar", command=self.quit_application).pack(pady=10)
+        tb.Label(self, text="Sistem Penilaian Gerakan Tari", font=("Helvetica", 20)).pack(pady=20)
+        tb.Button(self, text="Tambah Data Tari", command=lambda: controller.show_frame("AddDataPage")).pack(pady=10)
+        tb.Button(self, text="Penilaian Tari", command=lambda: controller.show_frame("EvaluatePage")).pack(pady=10)
+        tb.Button(self, text="Keluar", command=self.quit_application).pack(pady=10)
 
     def quit_application(self):
         release_resources()
         self.controller.destroy()
 
-class DanceApp(tk.Tk):
+class DanceApp(tb.Window):
     def __init__(self):
-        super().__init__()
+        super().__init__(themename="morph")
         self.title("Dance Evaluation App")
         self.geometry("800x600")
+        self.center_window(800, 600)
 
         self.frames = {}
-        container = tk.Frame(self)
+        container = tb.Frame(self)
         container.pack(fill="both", expand=True)
 
         for PageClass in (HomePage, AddDataPage, EvaluatePage):
@@ -397,6 +417,16 @@ class DanceApp(tk.Tk):
             frame.grid(row=0, column=0, sticky="nsew")
 
         self.show_frame("HomePage")
+        
+    def center_window(self, width, height):
+        """Memusatkan jendela aplikasi pada layar."""
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+
+        x_coordinate = (screen_width // 2) - (width // 2)
+        y_coordinate = (screen_height // 2) - (height // 2)
+
+        self.geometry(f"{width}x{height}+{x_coordinate}+{y_coordinate}")
 
     def show_frame(self, page_name):
         frame = self.frames[page_name]
@@ -409,8 +439,7 @@ def release_resources():
     logger.info("Resources released.")
 
 if __name__ == "__main__":
-    logger.info("Starting application.")
-    initialize_database()
+    print("Starting application.")
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():

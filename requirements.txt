@@ -1,5 +1,8 @@
 mediapipe
 opencv-python
-Pillow
+pillow
 numpy
 tkintertable
+ttkbootstrap
+zlib-compress
+zlib-decompress
